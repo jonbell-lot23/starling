@@ -6,7 +6,6 @@ import {
   saveScores,
   saveTournament,
   type RunState,
-  type Direction,
   type Iteration,
 } from "./state";
 import { glean_search, web_search, figma_createPage, figma_createFrame, figma_updateFrame, figma_addAnnotation } from "./mcp";
@@ -27,25 +26,12 @@ export async function run(url: string, description: string): Promise<RunState> {
   const state = await initRun(url, description, personas);
   console.log(`   Run ID: ${state.id}\n`);
 
-  // Phase 1: Research
   await phaseResearch(state);
-
-  // Phase 2: Diverge
   await phaseDiverge(state);
-
-  // Phase 3: Initial Feedback
   await phaseFeedback(state, 1);
-
-  // Phase 4: Iterate
   await phaseIterate(state);
-
-  // Phase 5: Tournament
   await phaseTournament(state);
-
-  // Phase 6: Converge
   await phaseConverge(state);
-
-  // Phase 7: Report
   await phaseReport(state);
 
   return state;
@@ -94,14 +80,13 @@ async function phaseDiverge(state: RunState): Promise<void> {
 
   for (const seed of directionSeeds) {
     const frame = await figma_createFrame(pageId, seed.name, seed.thesis);
-    const direction: Direction = {
+    state.directions.push({
       id: frame.id,
       name: seed.name,
       thesis: seed.thesis,
       iterations: [],
       alive: true,
-    };
-    state.directions.push(direction);
+    });
     console.log(`   Created: ${seed.name} — "${seed.thesis}"`);
   }
 
@@ -118,7 +103,9 @@ async function phaseFeedback(state: RunState, round: number): Promise<void> {
   for (const dir of state.directions) {
     if (!dir.alive) continue;
 
-    const feedback = state.personas.map((p) => generateFeedback(p, dir, round));
+    const feedback = await Promise.all(
+      state.personas.map((p) => generateFeedback(p, dir, round))
+    );
     const avg = averageScore(feedback);
 
     const iteration: Iteration = {
@@ -132,9 +119,7 @@ async function phaseFeedback(state: RunState, round: number): Promise<void> {
     console.log(`   ${dir.name}: avg ${avg}/100`);
   }
 
-  // Cull below 30
   cullBelowThreshold(state.directions);
-
   await saveScores(state);
   await saveState(state);
   console.log("");
@@ -152,7 +137,6 @@ async function phaseIterate(state: RunState): Promise<void> {
     for (const dir of state.directions) {
       if (!dir.alive) continue;
 
-      // Apply previous feedback
       const prevIteration = dir.iterations[dir.iterations.length - 1];
       const topDislikes = prevIteration.feedback
         .flatMap((f) => f.dislikes)
@@ -163,15 +147,15 @@ async function phaseIterate(state: RunState): Promise<void> {
 
       await figma_updateFrame(dir.id, changes);
 
-      // Get fresh feedback
-      const feedback = state.personas.map((p) => generateFeedback(p, dir, round));
+      const feedback = await Promise.all(
+        state.personas.map((p) => generateFeedback(p, dir, round))
+      );
       const avg = averageScore(feedback);
 
       dir.iterations.push({ round, changes, feedback, avgScore: avg });
       console.log(`   ${dir.name}: avg ${avg}/100 (${changes.slice(0, 50)})`);
     }
 
-    // Cull after each round
     cullBelowThreshold(state.directions);
     await saveScores(state);
     await saveState(state);
@@ -219,7 +203,9 @@ async function phaseConverge(state: RunState): Promise<void> {
 
       await figma_updateFrame(dir.id, changes);
 
-      const feedback = state.personas.map((p) => generateFeedback(p, dir, iterationNum));
+      const feedback = await Promise.all(
+        state.personas.map((p) => generateFeedback(p, dir, iterationNum))
+      );
       const avg = averageScore(feedback);
 
       dir.iterations.push({ round: iterationNum, changes, feedback, avgScore: avg });
@@ -230,7 +216,6 @@ async function phaseConverge(state: RunState): Promise<void> {
     await saveState(state);
   }
 
-  // Determine final winner
   const finalists = state.finalWinners.map((id) => {
     const dir = state.directions.find((d) => d.id === id)!;
     const lastScore = dir.iterations[dir.iterations.length - 1]?.avgScore ?? 0;
@@ -254,7 +239,6 @@ async function phaseReport(state: RunState): Promise<void> {
   console.log(`📝 Phase 7: Report`);
   state.phase = "report";
 
-  // Add annotations to Figma
   for (const dir of state.directions) {
     for (const it of dir.iterations) {
       for (const fb of it.feedback) {
@@ -265,7 +249,7 @@ async function phaseReport(state: RunState): Promise<void> {
     }
   }
 
-  const report = await generateReport(state);
+  await generateReport(state);
 
   state.phase = "done";
   await saveState(state);
