@@ -1,5 +1,6 @@
 import type { Persona } from "./personas";
 import type { Direction, PersonaFeedback } from "./state";
+import type { StarlingConfig } from "./config";
 
 /**
  * Generate feedback from a persona for a direction.
@@ -8,11 +9,12 @@ import type { Direction, PersonaFeedback } from "./state";
 export async function generateFeedback(
   persona: Persona,
   direction: Direction,
-  iterationRound: number
+  iterationRound: number,
+  config?: StarlingConfig
 ): Promise<PersonaFeedback> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (apiKey) {
-    return generateAIFeedback(apiKey, persona, direction, iterationRound);
+    return generateAIFeedback(apiKey, persona, direction, iterationRound, config);
   }
   return generateStubFeedback(persona, direction, iterationRound);
 }
@@ -29,10 +31,15 @@ async function generateAIFeedback(
   apiKey: string,
   persona: Persona,
   direction: Direction,
-  iterationRound: number
+  iterationRound: number,
+  config?: StarlingConfig
 ): Promise<PersonaFeedback> {
   const previousFeedback = persona.memory.length > 0
     ? `\n\nYour previous feedback on this project:\n${persona.memory.join("\n")}`
+    : "";
+
+  const principlesSection = config?.designPrinciples && config.designPrinciples.length > 0
+    ? `\n\nEvaluate against these design principles (weighted by importance):\n${config.designPrinciples.map((p) => `- ${p.name} (weight: ${p.weight}): ${p.description}`).join("\n")}`
     : "";
 
   const prompt = `You are ${persona.name}, a ${persona.archetype}.
@@ -42,6 +49,7 @@ Background: ${persona.description}
 Your priorities: ${persona.priorities.join(", ")}
 Your frustrations: ${persona.frustrations.join(", ")}
 ${previousFeedback}
+${principlesSection}
 
 You are reviewing iteration ${iterationRound} of a design direction called "${direction.name}".
 Thesis: "${direction.thesis}"

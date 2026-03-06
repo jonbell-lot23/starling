@@ -3,6 +3,8 @@
 import { run } from "./engine";
 import { loadState, listRuns } from "./state";
 import { generateReport } from "./report";
+import { generateConfigTemplate } from "./config";
+import { join } from "node:path";
 
 const args = process.argv.slice(2);
 const command = args[0];
@@ -11,6 +13,9 @@ async function main() {
   switch (command) {
     case "run":
       await handleRun();
+      break;
+    case "init":
+      await handleInit();
       break;
     case "status":
       await handleStatus();
@@ -38,6 +43,18 @@ async function handleRun() {
 
   const state = await run(url, description);
   console.log(`✅ Run ${state.id} complete. See runs/${state.id}/report.md`);
+}
+
+async function handleInit() {
+  const configPath = join(process.cwd(), "starling.config.ts");
+  const file = Bun.file(configPath);
+  if (await file.exists()) {
+    console.error("starling.config.ts already exists.");
+    process.exit(1);
+  }
+
+  await Bun.write(configPath, generateConfigTemplate());
+  console.log("Created starling.config.ts");
 }
 
 async function handleStatus() {
@@ -96,6 +113,7 @@ function printUsage() {
 
 Usage:
   starling run <url> --description "..."   Run a design exploration
+  starling init                            Create starling.config.ts
   starling status <run-id>                 Check run status
   starling report <run-id>                 Regenerate/view report
   starling list                            List all runs

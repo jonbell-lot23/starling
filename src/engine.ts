@@ -1,4 +1,4 @@
-import { createDefaultPersonas } from "./personas";
+import { createDefaultPersonas, type Persona } from "./personas";
 import {
   initRun,
   saveState,
@@ -12,29 +12,46 @@ import { glean_search, web_search, figma_createPage, figma_createFrame, figma_up
 import { generateFeedback, averageScore } from "./feedback";
 import { cullBelowThreshold, runTournament, selectTopTwo } from "./scoring";
 import { generateReport } from "./report";
+import { loadConfig, type StarlingConfig } from "./config";
 
 const INITIAL_DIRECTIONS = 4;
-const ITERATIONS_PER_DIRECTION = 4;
-const CONVERGENCE_ROUNDS = 3;
 
 export async function run(url: string, description: string): Promise<RunState> {
   console.log(`\n🐦 Starling — Design Orchestrator`);
   console.log(`   URL: ${url}`);
   console.log(`   Description: ${description}\n`);
 
+  const config = await loadConfig();
+  const iterationsPerDirection = config.defaultIterations ?? 4;
+  const convergenceRounds = config.convergenceRounds ?? 3;
+
   const personas = createDefaultPersonas();
+  applyPersonaOverrides(personas, config);
   const state = await initRun(url, description, personas);
   console.log(`   Run ID: ${state.id}\n`);
 
   await phaseResearch(state);
   await phaseDiverge(state);
-  await phaseFeedback(state, 1);
-  await phaseIterate(state);
+  await phaseFeedback(state, 1, config);
+  await phaseIterate(state, iterationsPerDirection, config);
   await phaseTournament(state);
-  await phaseConverge(state);
+  await phaseConverge(state, convergenceRounds, config);
   await phaseReport(state);
 
   return state;
+}
+
+function applyPersonaOverrides(personas: Persona[], config: StarlingConfig): void {
+  if (!config.personaOverrides) return;
+  for (const override of config.personaOverrides) {
+    const persona = personas.find((p) => p.id === override.id);
+    if (!persona) continue;
+    if (override.name) persona.name = override.name;
+    if (override.archetype) persona.archetype = override.archetype;
+    if (override.description) persona.description = override.description;
+    if (override.priorities) persona.priorities = override.priorities;
+    if (override.frustrations) persona.frustrations = override.frustrations;
+  }
 }
 
 // --- Phase 1: Research ---
@@ -96,7 +113,7 @@ async function phaseDiverge(state: RunState): Promise<void> {
 
 // --- Phase 3: Feedback ---
 
-async function phaseFeedback(state: RunState, round: number): Promise<void> {
+async function phaseFeedback(state: RunState, round: number, config: StarlingConfig): Promise<void> {
   console.log(`💬 Phase 3: Feedback (round ${round})`);
   state.phase = "feedback";
 
@@ -104,7 +121,7 @@ async function phaseFeedback(state: RunState, round: number): Promise<void> {
     if (!dir.alive) continue;
 
     const feedback = await Promise.all(
-      state.personas.map((p) => generateFeedback(p, dir, round))
+      state.personas.map((p) => generateFeedback(p, dir, round, config))
     );
     const avg = averageScore(feedback);
 
@@ -127,11 +144,11 @@ async function phaseFeedback(state: RunState, round: number): Promise<void> {
 
 // --- Phase 4: Iterate ---
 
-async function phaseIterate(state: RunState): Promise<void> {
+async function phaseIterate(state: RunState, iterationsPerDirection: number, config: StarlingConfig): Promise<void> {
   console.log(`🔄 Phase 4: Iterate`);
   state.phase = "iterate";
 
-  for (let round = 2; round <= ITERATIONS_PER_DIRECTION; round++) {
+  for (let round = 2; round <= iterationsPerDirection; round++) {
     console.log(`   --- Iteration round ${round} ---`);
 
     for (const dir of state.directions) {
@@ -148,7 +165,7 @@ async function phaseIterate(state: RunState): Promise<void> {
       await figma_updateFrame(dir.id, changes);
 
       const feedback = await Promise.all(
-        state.personas.map((p) => generateFeedback(p, dir, round))
+        state.personas.map((p) => generateFeedback(p, dir, round, config))
       );
       const avg = averageScore(feedback);
 
@@ -187,11 +204,11 @@ async function phaseTournament(state: RunState): Promise<void> {
 
 // --- Phase 6: Converge ---
 
-async function phaseConverge(state: RunState): Promise<void> {
+async function phaseConverge(state: RunState, convergenceRounds: number, config: StarlingConfig): Promise<void> {
   console.log(`🎯 Phase 6: Converge — refining top ${state.finalWinners.length} directions`);
   state.phase = "converge";
 
-  for (let round = 1; round <= CONVERGENCE_ROUNDS; round++) {
+  for (let round = 1; round <= convergenceRounds; round++) {
     console.log(`   --- Convergence round ${round} ---`);
 
     for (const winnerId of state.finalWinners) {
@@ -204,7 +221,7 @@ async function phaseConverge(state: RunState): Promise<void> {
       await figma_updateFrame(dir.id, changes);
 
       const feedback = await Promise.all(
-        state.personas.map((p) => generateFeedback(p, dir, iterationNum))
+        state.personas.map((p) => generateFeedback(p, dir, iterationNum, config))
       );
       const avg = averageScore(feedback);
 
