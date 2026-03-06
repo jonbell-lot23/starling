@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { run } from "./engine";
+import { run, resume } from "./engine";
 import { loadState, listRuns } from "./state";
 import { generateReport } from "./report";
 import { generateConfigTemplate } from "./config";
@@ -13,6 +13,9 @@ async function main() {
   switch (command) {
     case "run":
       await handleRun();
+      break;
+    case "resume":
+      await handleResume();
       break;
     case "init":
       await handleInit();
@@ -43,6 +46,39 @@ async function handleRun() {
 
   const state = await run(url, description);
   console.log(`✅ Run ${state.id} complete. See runs/${state.id}/report.md`);
+}
+
+async function handleResume() {
+  const runId = args[1];
+
+  let state;
+  if (runId) {
+    try {
+      state = await loadState(runId);
+    } catch {
+      console.error(`Run "${runId}" not found.`);
+      process.exit(1);
+    }
+  } else {
+    // Find most recent run
+    const runs = await listRuns();
+    if (runs.length === 0) {
+      console.error("No runs found to resume.");
+      process.exit(1);
+    }
+    const mostRecent = runs[0]; // already sorted newest first
+    try {
+      state = await loadState(mostRecent.id);
+    } catch {
+      console.error(`Could not load most recent run "${mostRecent.id}".`);
+      process.exit(1);
+    }
+  }
+
+  const result = await resume(state);
+  if (result.phase === "done") {
+    console.log(`✅ Run ${result.id} complete. See runs/${result.id}/report.md`);
+  }
 }
 
 async function handleInit() {
@@ -113,6 +149,7 @@ function printUsage() {
 
 Usage:
   starling run <url> --description "..."   Run a design exploration
+  starling resume [run-id]                 Resume an interrupted run
   starling init                            Create starling.config.ts
   starling status <run-id>                 Check run status
   starling report <run-id>                 Regenerate/view report

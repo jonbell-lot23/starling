@@ -41,6 +41,36 @@ export async function run(url: string, description: string): Promise<RunState> {
   return state;
 }
 
+export async function resume(state: RunState): Promise<RunState> {
+  console.log(`\n🐦 Starling — Resuming run ${state.id}`);
+  console.log(`   Phase: ${state.phase}`);
+  console.log(`   URL: ${state.url}`);
+  console.log(`   Description: ${state.description}\n`);
+
+  const config = await loadConfig();
+  const iterationsPerDirection = config.defaultIterations ?? 4;
+  const convergenceRounds = config.convergenceRounds ?? 3;
+
+  const phases = ["research", "diverge", "feedback", "iterate", "tournament", "converge", "report", "done"] as const;
+  const currentIdx = phases.indexOf(state.phase);
+
+  if (state.phase === "done") {
+    console.log(`   Run already complete.\n`);
+    return state;
+  }
+
+  // Resume from the current incomplete phase
+  if (currentIdx <= 0) await phaseResearch(state);
+  if (currentIdx <= 1) await phaseDiverge(state);
+  if (currentIdx <= 2) await phaseFeedback(state, 1, config);
+  if (currentIdx <= 3) await phaseIterate(state, iterationsPerDirection, config);
+  if (currentIdx <= 4) await phaseTournament(state);
+  if (currentIdx <= 5) await phaseConverge(state, convergenceRounds, config);
+  if (currentIdx <= 6) await phaseReport(state);
+
+  return state;
+}
+
 function applyPersonaOverrides(personas: Persona[], config: StarlingConfig): void {
   if (!config.personaOverrides) return;
   for (const override of config.personaOverrides) {
