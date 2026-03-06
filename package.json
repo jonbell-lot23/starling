@@ -1,0 +1,18 @@
+{
+  "name": "starling",
+  "version": "0.1.0",
+  "description": "Design orchestrator — autonomous iterative design exploration via CLI",
+  "type": "module",
+  "bin": {
+    "starling": "./src/cli.ts"
+  },
+  "scripts": {
+    "start": "bun run src/cli.ts",
+    "dev": "bun --watch src/cli.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7"
+  }
+}
